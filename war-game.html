@@ -26,11 +26,12 @@
     /* ── Score ── */
     #score { position:absolute; top:14px; right:16px; font-size:18px; text-shadow:0 0 6px #000; }
 
-    /* ── Crosshair ── */
-    #xhair { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); }
-    #xhair::before,#xhair::after { content:''; position:absolute; background:rgba(255,255,255,.9); }
-    #xhair::before { width:2px; height:18px; top:-9px; left:-1px; }
-    #xhair::after  { width:18px; height:2px; top:-1px; left:-9px; }
+    /* ── Reticle ── */
+    #reticle { position:absolute; transform:translate(-50%,-50%); pointer-events:none; }
+    #r-t,#r-b { position:absolute; width:2px; background:rgba(255,255,255,.92); box-shadow:0 0 3px rgba(0,0,0,.9); }
+    #r-l,#r-r { position:absolute; height:2px; background:rgba(255,255,255,.92); box-shadow:0 0 3px rgba(0,0,0,.9); }
+    #r-d { position:absolute; width:3px; height:3px; border-radius:50%; background:rgba(255,255,255,.92);
+           top:-1.5px; left:-1.5px; box-shadow:0 0 4px rgba(0,0,0,.9); }
 
     /* ── Controls info ── */
     #info { position:absolute; top:14px; left:14px; font-size:12px; line-height:2;
@@ -68,6 +69,13 @@
     }
     #win-screen h1 { font-size:52px; color:#ffd700; text-shadow:0 0 24px #ffd700; }
     #win-screen p  { font-size:22px; color:#fff; }
+
+    /* ── Minimap ── */
+    #minimap {
+      position:absolute; top:50px; right:16px;
+      border:1px solid #555; border-radius:4px;
+      image-rendering:pixelated;
+    }
   </style>
 </head>
 <body>
@@ -94,12 +102,18 @@
   </div>
 
   <div id="score">Score: 0</div>
-  <div id="xhair"></div>
+  <div id="reticle">
+    <div id="r-t"></div>
+    <div id="r-b"></div>
+    <div id="r-l"></div>
+    <div id="r-r"></div>
+    <div id="r-d"></div>
+  </div>
 
   <div id="info">
     WASD – Move &nbsp; Space – Jump<br>
     Mouse – Aim &nbsp; Left-click – Shoot<br>
-    Right-drag – Camera (no lock needed)
+    Right-click – Aim Down Sights (ADS)
   </div>
 
   <div id="player-respawn">
@@ -114,6 +128,8 @@
     <h1>YOU WIN!</h1>
     <p>All zones conquered. The battlefield is yours.</p>
   </div>
+
+  <canvas id="minimap" width="160" height="160"></canvas>
 </div>
 
 <!-- Three.js from local file — no internet needed -->
@@ -198,6 +214,8 @@ addCar(-4,4,.3);
 addCar(14,2,-.5);
 addCar(-6,-8,.8);
 
+const MAP_LIMIT = 79;
+
 // ═══════════════════════════════════════════════
 //  INPUT  — pointer lock (primary) + right-drag (fallback)
 // ═══════════════════════════════════════════════
@@ -211,6 +229,7 @@ window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 let yaw=0, pitch=0, mouseLocked=false;
 let dragging=false, lastX=0, lastY=0;
+let isADS=false, adsProgress=0, reticleKick=0;
 
 const cnv = renderer.domElement;
 const aimHint = document.getElementById('aim-hint');
@@ -242,10 +261,15 @@ document.addEventListener('mousemove', e => {
 });
 
 window.addEventListener('mousedown', e => {
-  if (e.button === 2) { dragging=true; lastX=e.clientX; lastY=e.clientY; }
-  if (e.button === 0 && !mouseLocked) playerShoot();  // left-click shoots even without lock
+  if (e.button === 2) {
+    if (mouseLocked) isADS = true;
+    else { dragging=true; lastX=e.clientX; lastY=e.clientY; }
+  }
+  if (e.button === 0 && !mouseLocked) playerShoot();
 });
-window.addEventListener('mouseup',   e => { if (e.button===2) dragging=false; });
+window.addEventListener('mouseup', e => {
+  if (e.button === 2) { isADS=false; dragging=false; }
+});
 window.addEventListener('contextmenu', e => e.preventDefault());
 
 // ═══════════════════════════════════════════════
@@ -277,7 +301,7 @@ const player = (() => {
   const mesh = makeCapsule(0x2255cc);
   scene.add(mesh);
   let hp=100, alive=true, velY=0, grounded=true, deathTimer=-1;
-  const SPEED=6.5, JUMP=8, GRAV=22, RESPAWN_SEC=5, mv=new THREE.Vector3();
+  const WALK=4.5, SPRINT=9.0, JUMP=8, GRAV=22, RESPAWN_SEC=5, mv=new THREE.Vector3();
 
   const elPR    = document.getElementById('player-respawn');
   const elCount = document.getElementById('pr-count');
@@ -320,22 +344,31 @@ const player = (() => {
     if (keys['KeyD']) mv.x+=1;
     if (mv.lengthSq()>0) {
       mv.normalize().applyEuler(new THREE.Euler(0,yaw,0));
-      mesh.position.addScaledVector(mv, SPEED*dt);
+      const spd = (keys['ShiftLeft']||keys['ShiftRight']) ? SPRINT : WALK;
+      mesh.position.addScaledVector(mv, spd*dt);
       mesh.rotation.y = Math.atan2(mv.x, mv.z);
     }
     if (keys['Space'] && grounded) { velY=JUMP; grounded=false; }
     velY -= GRAV*dt;
     mesh.position.y += velY*dt;
     if (mesh.position.y<=0) { mesh.position.y=0; velY=0; grounded=true; }
+    mesh.position.x = Math.max(-MAP_LIMIT, Math.min(MAP_LIMIT, mesh.position.x));
+    mesh.position.z = Math.max(-MAP_LIMIT, Math.min(MAP_LIMIT, mesh.position.z));
   }
   return { mesh, update, hit, get alive(){return alive;} };
 })();
 
 function playerShoot() {
   if (!player.alive) return;
-  const dir = new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(pitch,yaw,0,'YXZ'));
+  const spread = adsProgress > 0.5 ? 0.012 : 0.065;
+  const dir = new THREE.Vector3(
+    (Math.random()-.5)*spread,
+    (Math.random()-.5)*spread,
+    -1
+  ).applyEuler(new THREE.Euler(pitch,yaw,0,'YXZ')).normalize();
   const o = player.mesh.position.clone(); o.y+=1.3;
   spawnBullet(o, dir, 'player');
+  reticleKick = adsProgress > 0.5 ? 1.5 : 5;
 }
 
 // ═══════════════════════════════════════════════
@@ -370,7 +403,8 @@ function updateBullets(dt) {
     const step=b.vel.clone().multiplyScalar(dt);
     b.mesh.position.add(step);
     b.dist += step.length();
-    if (b.dist>B.range || b.mesh.position.y<-1) { popB(i); continue; }
+    if (b.dist>B.range || b.mesh.position.y<-1 ||
+        Math.abs(b.mesh.position.x)>MAP_LIMIT || Math.abs(b.mesh.position.z)>MAP_LIMIT) { popB(i); continue; }
 
     if (b.owner==='enemy' && player.alive && xzDist(b.mesh.position, player.mesh.position)<B.hitR) {
       player.hit(B.dmg); popB(i); continue;
@@ -393,7 +427,7 @@ function popB(i) { scene.remove(bullets[i].mesh); bullets.splice(i,1); }
 //  BOT AI  — patrol → chase → shoot → retreat
 // ═══════════════════════════════════════════════
 
-const BOT = { speed:3.8, chaseR:18, shootR:13, retreatHP:30, cd:1.3 };
+const BOT = { speed:3.8, chaseR:18, shootR:13, retreatHP:30, cd:2.2 };
 
 function addBot(type, x, z, patrol=[]) {
   const mesh = makeCapsule(type==='ally' ? 0x00bb44 : 0xcc2200);
@@ -432,7 +466,7 @@ function addBot(type, x, z, patrol=[]) {
     const o=mesh.position.clone(); o.y+=1.2;
     const a=tgt.mesh.position.clone(); a.y+=1.0;
     const d=new THREE.Vector3().subVectors(a,o).normalize();
-    d.x+=(Math.random()-.5)*.18; d.y+=(Math.random()-.5)*.08;
+    d.x+=(Math.random()-.5)*1.4; d.y+=(Math.random()-.5)*0.6;
     spawnBullet(o, d.normalize(), type);
   }
   function update(dt) {
@@ -440,16 +474,20 @@ function addBot(type, x, z, patrol=[]) {
     mesh.position.y=0;
     const tgt=getTarget(), dist=tgt?mesh.position.distanceTo(tgt.mesh.position):Infinity;
 
-    // Zone-defense override for enemies: if any uncaptured zone has friendlies
-    // inside and we're not already in combat, rush to defend it.
+    // Zone-defense / capture override for enemies
     if (type==='enemy' && state!=='retreat' && state!=='chase' && state!=='shoot') {
       const threatened = zones.find(z => z.underAttack);
       if (threatened) {
         defendPos = threatened.pos;
         state = 'defend';
-      } else if (state==='defend') {
-        // Zone no longer under attack — go back to patrol
-        state='patrol'; defendPos=null;
+      } else {
+        const capturable = zones.find(z => z.capturable);
+        if (capturable) {
+          defendPos = capturable.pos;
+          state = 'capture';
+        } else if (state==='defend' || state==='capture') {
+          state='patrol'; defendPos=null;
+        }
       }
     }
 
@@ -458,9 +496,11 @@ function addBot(type, x, z, patrol=[]) {
         const th=type==='ally' ? bots.find(b=>b.type==='enemy'&&b.alive) : (player.alive?player:null);
         if(th){ const aw=new THREE.Vector3().subVectors(mesh.position,th.mesh.position); aw.y=0; aw.normalize(); mesh.position.addScaledVector(aw,BOT.speed*1.4*dt); mesh.rotation.y=Math.atan2(aw.x,aw.z); } break;
       }
-      // Enemy rushing to a zone being captured by friendlies
       case 'defend':
-        if(dist<BOT.chaseR){ state='chase'; defendPos=null; break; } // spotted someone — fight
+        if(dist<BOT.chaseR){ state='chase'; defendPos=null; break; }
+        step(defendPos, dt); break;
+      case 'capture':
+        if(dist<BOT.chaseR){ state='chase'; defendPos=null; break; }
         step(defendPos, dt); break;
       case 'patrol':
         if(patrol.length){ const wp=new THREE.Vector3(patrol[pidx][0],0,patrol[pidx][1]); if(step(wp,dt)<0.5) pidx=(pidx+1)%patrol.length; }
@@ -478,6 +518,8 @@ function addBot(type, x, z, patrol=[]) {
         if(tgt&&dist<BOT.chaseR){state='chase';break;}
         if(mesh.position.distanceTo(player.mesh.position)>5) step(player.mesh.position,dt); break;
     }
+    mesh.position.x = Math.max(-MAP_LIMIT, Math.min(MAP_LIMIT, mesh.position.x));
+    mesh.position.z = Math.max(-MAP_LIMIT, Math.min(MAP_LIMIT, mesh.position.z));
   }
   const bot={mesh,type,update,hit,get alive(){return alive;}};
   bots.push(bot); return bot;
@@ -580,44 +622,83 @@ function makeZone(def, idx) {
   const elFill  = document.getElementById('z'+idx+'-fill');
   const elLabel = document.getElementById('z'+idx+'-label');
 
-  let pct=0, captured=false, friendlyInside=false;
+  // pct: -100 = fully enemy-owned, +100 = fully friendly-owned
+  let pct=0, friendlyInside=false, friendlyCaptured=false, enemyCaptured=false;
 
   return {
     update(dt) {
-      if (captured) { ring.material.opacity=0.6+0.1*Math.sin(Date.now()*.002); return; }
-
       const fi = (player.alive && player.mesh.position.distanceTo(POS)<RAD) ||
                  bots.some(b=>b.type==='ally'&&b.alive&&b.mesh.position.distanceTo(POS)<RAD);
       const ei = bots.some(b=>b.type==='enemy'&&b.alive&&b.mesh.position.distanceTo(POS)<RAD);
-
-      // Expose to bots so enemies know to come defend
       friendlyInside = fi;
 
-      if (fi && !ei) pct = Math.min(100, pct + (100/ZONE_CAPTURE_TIME)*dt);
-      else if (!fi)  pct = Math.max(0,   pct - ZONE_DRAIN_RATE*dt);
+      if (!friendlyCaptured && !enemyCaptured) {
+        if      (fi && !ei) pct = Math.min(100, pct + (100/ZONE_CAPTURE_TIME)*dt);
+        else if (ei && !fi) pct = Math.max(-100, pct - (100/ZONE_CAPTURE_TIME)*dt);
+        else if (!fi && !ei) {
+          if (pct > 0) pct = Math.max(0,    pct - ZONE_DRAIN_RATE*dt);
+          else         pct = Math.min(0,    pct + ZONE_DRAIN_RATE*dt);
+        }
 
-      const p=pct/100;
+        if (pct >= 100) {
+          friendlyCaptured = true;
+          fill.material.color.set(0xffd700); fill.material.opacity=0.65;
+          ring.material.color.set(0xffd700); pole.material.color.set(0xffd700);
+          elFill.style.background='#ffd700'; elFill.style.width='100%';
+          elLabel.textContent='Zone '+def.label+': CAPTURED ★';
+          addScore(200); showMsg('Zone '+def.label+' conquered! +200', 3000);
+          checkWin();
+        } else if (pct <= -100) {
+          enemyCaptured = true;
+          fill.material.color.set(0xcc2200); fill.material.opacity=0.65;
+          ring.material.color.set(0xcc2200); pole.material.color.set(0xcc2200);
+          elFill.style.background='#cc2200'; elFill.style.width='100%';
+          elLabel.textContent='Zone '+def.label+': ENEMY ★';
+          showMsg('Zone '+def.label+' captured by enemies!', 3000);
+        }
+      } else if (friendlyCaptured) {
+        if (ei && !fi) {
+          pct = Math.max(-100, pct - (100/ZONE_CAPTURE_TIME)*dt);
+          if (pct < 100) {
+            friendlyCaptured = false;
+            fill.material.color.set(def.color); ring.material.color.set(def.color);
+            pole.material.color.set(def.color); fill.material.opacity=0.35;
+          }
+        } else {
+          ring.material.opacity=0.6+0.1*Math.sin(Date.now()*.002);
+        }
+      } else if (enemyCaptured) {
+        if (fi && !ei) {
+          pct = Math.min(100, pct + (100/ZONE_CAPTURE_TIME)*dt);
+          if (pct > -100) {
+            enemyCaptured = false;
+            fill.material.color.set(def.color); ring.material.color.set(def.color);
+            pole.material.color.set(def.color); fill.material.opacity=0.35;
+          }
+        } else {
+          ring.material.opacity=0.6+0.1*Math.sin(Date.now()*.002);
+        }
+      }
+
+      // 3D fill visual
+      const p = Math.abs(pct)/100;
       fill.scale.y=Math.max(0.001,p); fill.position.y=0.5*p;
-      ring.material.opacity=0.35+0.25*Math.sin(Date.now()*.003);
-
-      elFill.style.width = pct.toFixed(1)+'%';
-      elLabel.textContent = 'Zone '+def.label+': '+Math.floor(pct)+'%';
-
-      if (pct>=100) {
-        captured=true;
-        fill.material.color.set(0xffd700); fill.material.opacity=0.65;
-        ring.material.color.set(0xffd700); pole.material.color.set(0xffd700);
-        elFill.style.background='#ffd700'; elFill.style.width='100%';
-        elLabel.textContent='Zone '+def.label+': CAPTURED ★';
-        addScore(200);
-        showMsg('Zone '+def.label+' conquered! +200', 3000);
-        checkWin();
+      if (!friendlyCaptured && !enemyCaptured) {
+        ring.material.opacity=0.35+0.25*Math.sin(Date.now()*.003);
+        const col = pct < 0 ? 0xcc2200 : def.color;
+        fill.material.color.set(col); ring.material.color.set(col);
+        // HUD bar
+        elFill.style.width = (Math.abs(pct)).toFixed(1)+'%';
+        elFill.style.background = pct < 0 ? '#cc2200' : '#2980b9';
+        const side = pct < -1 ? ' (Enemy)' : pct > 1 ? ' (Ours)' : '';
+        elLabel.textContent='Zone '+def.label+': '+Math.floor(Math.abs(pct))+'%'+side;
       }
     },
-    // Bots read these to decide whether to rush a zone
-    get underAttack() { return friendlyInside && !captured; },
-    get pos()         { return POS; },
-    get captured()    { return captured; }
+    get underAttack()   { return friendlyInside && !friendlyCaptured; },
+    get pos()           { return POS; },
+    get captured()      { return friendlyCaptured; },
+    get enemyCaptured() { return enemyCaptured; },
+    get capturable()    { return !enemyCaptured; }
   };
 }
 
@@ -630,23 +711,176 @@ function checkWin() {
 }
 
 // ═══════════════════════════════════════════════
+//  MINIMAP
+// ═══════════════════════════════════════════════
+
+const mmCanvas = document.getElementById('minimap');
+const mmCtx    = mmCanvas.getContext('2d');
+const MM_SIZE  = 160;
+const MM_WORLD = 80;   // world half-extent (MAP_LIMIT≈79)
+
+// [x, z, w, d] from addBuilding calls
+const MM_BUILDINGS = [
+  [10,-6,5,4], [-11,9,7,3], [5,12,3,3], [20,-8,4,5], [-8,-14,6,4]
+];
+const MM_ZONE_BASE_COLORS = ['#2299ff', '#aa22ff', '#22ffdd'];
+
+function w2mm(x, z) {
+  const s = MM_SIZE / (MM_WORLD * 2);
+  return [ MM_SIZE/2 + x*s, MM_SIZE/2 + z*s ];
+}
+
+function drawMinimap() {
+  const ctx = mmCtx;
+  ctx.clearRect(0, 0, MM_SIZE, MM_SIZE);
+
+  // background
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillRect(0, 0, MM_SIZE, MM_SIZE);
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, MM_SIZE-1, MM_SIZE-1);
+
+  const s = MM_SIZE / (MM_WORLD * 2);  // px per world unit
+
+  // buildings
+  ctx.fillStyle = '#7a6045';
+  MM_BUILDINGS.forEach(([bx,bz,bw,bd]) => {
+    const [px, pz] = w2mm(bx, bz);
+    ctx.fillRect(px - bw*s/2, pz - bd*s/2, bw*s, bd*s);
+  });
+
+  // zones
+  zones.forEach((zone, i) => {
+    const [px, pz] = w2mm(zone.pos.x, zone.pos.z);
+    const r = 3.5 * s;
+    let col;
+    if (zone.captured)      col = '#ffd700';
+    else if (zone.enemyCaptured) col = '#cc2200';
+    else                    col = MM_ZONE_BASE_COLORS[i];
+    ctx.beginPath(); ctx.arc(px, pz, r, 0, Math.PI*2);
+    ctx.fillStyle = col + '55'; ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(['A','B','C'][i], px, pz);
+  });
+
+  // bots
+  bots.forEach(bot => {
+    if (!bot.alive) return;
+    const [px, pz] = w2mm(bot.mesh.position.x, bot.mesh.position.z);
+    ctx.beginPath(); ctx.arc(px, pz, 2.5, 0, Math.PI*2);
+    ctx.fillStyle = bot.type === 'ally' ? '#00ff88' : '#ff4422';
+    ctx.fill();
+  });
+
+  // player
+  if (player.alive) {
+    const [px, pz] = w2mm(player.mesh.position.x, player.mesh.position.z);
+    // direction line
+    const dx = -Math.sin(yaw) * 8, dz = -Math.cos(yaw) * 8;
+    ctx.beginPath(); ctx.moveTo(px, pz); ctx.lineTo(px+dx, pz+dz);
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+    // dot
+    ctx.beginPath(); ctx.arc(px, pz, 4, 0, Math.PI*2);
+    ctx.fillStyle = '#4499ff'; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  // label
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.font = '8px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText('MAP', 4, 3);
+}
+
+// ═══════════════════════════════════════════════
 //  CAMERA  — third-person behind player
 // ═══════════════════════════════════════════════
 
+const _tpPos  = new THREE.Vector3();
+const _eyePos = new THREE.Vector3();
+const _tpLook = new THREE.Vector3();
+const _fpLook = new THREE.Vector3();
+const _camLookTarget = new THREE.Vector3();
+const _fpAimDir = new THREE.Vector3();
+
 function updateCamera() {
-  if (!player.alive) return;  // camera stays frozen at death position during countdown
-  camera.position.copy(player.mesh.position).add(new THREE.Vector3(
-    Math.sin(yaw)*7.5,
-    2.8+Math.sin(pitch)*4.5,
-    Math.cos(yaw)*7.5
-  ));
-  const look=player.mesh.position.clone(); look.y+=1.1;
-  camera.lookAt(look);
+  if (!player.alive) return;
+  const t    = adsProgress;
+  const sinY = Math.sin(yaw), cosY = Math.cos(yaw);
+
+  // Third-person: behind and above
+  _tpPos.set(
+    player.mesh.position.x + sinY * 7.5,
+    player.mesh.position.y + 2.8 + Math.sin(pitch) * 4.5,
+    player.mesh.position.z + cosY * 7.5
+  );
+
+  // First-person: at player's eye
+  _eyePos.set(
+    player.mesh.position.x,
+    player.mesh.position.y + 1.45,
+    player.mesh.position.z
+  );
+
+  camera.position.lerpVectors(_tpPos, _eyePos, t);
+
+  // Third-person looks at player head; first-person looks forward along aim
+  _tpLook.set(player.mesh.position.x, player.mesh.position.y + 1.1, player.mesh.position.z);
+  _fpAimDir.set(0, 0, -1).applyEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+  _fpLook.copy(_eyePos).addScaledVector(_fpAimDir, 10);
+
+  _camLookTarget.lerpVectors(_tpLook, _fpLook, t);
+  camera.lookAt(_camLookTarget);
+
+  camera.fov = 70 - 25 * t;   // 70° hip → 45° ADS
+  camera.updateProjectionMatrix();
+
+  // Hide player mesh once camera is inside it
+  player.mesh.visible = t < 0.8;
 }
 
 // ═══════════════════════════════════════════════
 //  HUD HELPERS
 // ═══════════════════════════════════════════════
+
+const reticleEl = document.getElementById('reticle');
+const rT=document.getElementById('r-t'), rB=document.getElementById('r-b');
+const rL=document.getElementById('r-l'), rR=document.getElementById('r-r');
+const rD=document.getElementById('r-d');
+
+const _aimDir = new THREE.Vector3();
+const _aimPt  = new THREE.Vector3();
+
+function updateReticle(dt) {
+  reticleKick = Math.max(0, reticleKick - dt * 30);
+
+  if (player.alive) {
+    // Project the actual shoot direction into screen space
+    _aimDir.set(0, 0, -1).applyEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+    _aimPt.copy(player.mesh.position);
+    _aimPt.y += 1.3;
+    _aimPt.addScaledVector(_aimDir, 40);   // 40 units ahead
+    _aimPt.project(camera);                // → NDC [-1,1]
+
+    reticleEl.style.left = (( _aimPt.x * 0.5 + 0.5) * window.innerWidth)  + 'px';
+    reticleEl.style.top  = ((-_aimPt.y * 0.5 + 0.5) * window.innerHeight) + 'px';
+    reticleEl.style.display = 'block';
+  } else {
+    reticleEl.style.display = 'none';
+  }
+
+  const t   = adsProgress;
+  const gap = 16 - 11*t + reticleKick;
+  const len = Math.round(11 - 3*t);
+
+  rT.style.height = len+'px'; rT.style.top  = -(gap+len)+'px'; rT.style.left = '-1px';
+  rB.style.height = len+'px'; rB.style.top  = gap+'px';        rB.style.left = '-1px';
+  rL.style.width  = len+'px'; rL.style.left = -(gap+len)+'px'; rL.style.top  = '-1px';
+  rR.style.width  = len+'px'; rR.style.left = gap+'px';        rR.style.top  = '-1px';
+  rD.style.opacity = Math.max(0, (t - 0.5) * 2).toFixed(2);
+}
 
 const elHP=document.getElementById('hp-fill'), elHPLb=document.getElementById('hp-label');
 const elScore=document.getElementById('score');
@@ -680,12 +914,16 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
 
+  adsProgress += ((isADS ? 1 : 0) - adsProgress) * Math.min(1, dt * 14);
+
   player.update(dt);
   bots.forEach(b => b.update(dt));
   updateBullets(dt);
   zones.forEach(z => z.update(dt));
   tickRespawn(dt);
   updateCamera();
+  updateReticle(dt);
+  drawMinimap();
   renderer.render(scene, camera);
 }
 
