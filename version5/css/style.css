@@ -1,0 +1,162 @@
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; overflow:hidden; font-family:'Courier New',monospace; color:#fff; }
+canvas { position:fixed; top:0; left:0; z-index:1; cursor:crosshair; }
+
+#hud { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:10; }
+
+/* ── HP ── */
+#hp-wrap  { position:absolute; bottom:90px; left:28px; }
+#hp-label { font-size:13px; margin-bottom:3px; text-shadow:0 0 4px #000; }
+#hp-track { width:200px; height:14px; background:rgba(0,0,0,.6); border:1px solid #666; border-radius:3px; overflow:hidden; }
+#hp-fill  { height:100%; background:#27ae60; transition:width .15s, background .3s; }
+
+/* ── Stamina ── */
+#sta-wrap  { position:absolute; bottom:62px; left:28px; }
+#sta-label { font-size:12px; margin-bottom:3px; letter-spacing:.5px; text-shadow:0 0 4px #000; }
+#sta-track { width:200px; height:10px; background:rgba(0,0,0,.6); border:1px solid #666; border-radius:3px; overflow:hidden; }
+#sta-fill  { height:100%; width:100%; background:#f39c12; transition:width .1s, background .25s; }
+
+/* ── Ammo ── */
+#ammo-wrap  { position:absolute; bottom:36px; left:28px; }
+#ammo-label { font-size:12px; margin-bottom:2px; letter-spacing:.5px; text-shadow:0 0 4px #000; }
+#ammo-count { font-size:14px; font-weight:bold; letter-spacing:1px; text-shadow:0 0 5px #000; color:#f0e68c; }
+
+/* ── Zone bars (3 stacked, bottom-right) ── */
+#zones-hud { position:absolute; bottom:28px; right:28px; width:200px; }
+.zrow      { margin-bottom:6px; }
+.zlabel    { font-size:12px; margin-bottom:2px; text-shadow:0 0 4px #000; }
+.ztrack    { width:200px; height:11px; background:rgba(0,0,0,.6); border:1px solid #666; border-radius:3px; overflow:hidden; }
+.zfill     { height:100%; width:0; background:#ffffff; transition:width .2s, background .4s; }
+
+/* ── Kill/Death/Points HUD ── */
+#kd-hud {
+  position:absolute; top:248px; left:16px; width:160px;
+  font-size:13px; background:rgba(0,0,0,.62); padding:3px 10px;
+  border-radius:4px; border:1px solid #555; letter-spacing:1px;
+  text-align:center; box-sizing:border-box; white-space:nowrap;
+}
+
+/* ── Reticle ── */
+#reticle { position:absolute; transform:translate(-50%,-50%); pointer-events:none; }
+#r-t,#r-b { position:absolute; width:2px; background:rgba(255,255,255,.92); box-shadow:0 0 3px rgba(0,0,0,.9); }
+#r-l,#r-r { position:absolute; height:2px; background:rgba(255,255,255,.92); box-shadow:0 0 3px rgba(0,0,0,.9); }
+#r-d { position:absolute; width:3px; height:3px; border-radius:50%; background:rgba(255,255,255,.92);
+       top:-1.5px; left:-1.5px; box-shadow:0 0 4px rgba(0,0,0,.9); }
+
+
+/* ── Respawn countdown ── */
+#respawn-hud {
+  display:none; position:absolute; top:16px; left:50%; transform:translateX(-50%);
+  background:rgba(180,0,0,.8); padding:6px 20px; border-radius:6px;
+  font-size:14px; letter-spacing:.5px; border:1px solid #f55;
+}
+#ally-respawn-hud {
+  display:none; position:absolute; top:48px; left:50%; transform:translateX(-50%);
+  background:rgba(0,140,60,.85); padding:6px 20px; border-radius:6px;
+  font-size:14px; letter-spacing:.5px; border:1px solid #4f4;
+}
+
+/* ── Player death / respawn overlay ── */
+#player-respawn {
+  display:none; position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  text-align:center; pointer-events:none;
+}
+#player-respawn .died  { font-size:38px; color:#e74c3c; text-shadow:0 0 16px #e74c3c; margin-bottom:10px; }
+#player-respawn .timer { font-size:22px; color:#fff; }
+
+/* ── Aim hint ── */
+#aim-hint {
+  position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
+  font-size:13px; background:rgba(0,0,0,.6); padding:5px 14px;
+  border-radius:4px; border:1px solid #666; letter-spacing:.5px;
+}
+
+/* ── Hit flinch ── */
+@keyframes screen-flinch {
+  0%   { transform: translate(0,0) rotate(0deg); }
+  18%  { transform: translate(-7px, 5px) rotate(-0.6deg); }
+  38%  { transform: translate(5px, -4px) rotate(0.5deg); }
+  58%  { transform: translate(-3px, 2px) rotate(-0.25deg); }
+  78%  { transform: translate(2px, -1px) rotate(0.1deg); }
+  100% { transform: translate(0,0) rotate(0deg); }
+}
+body.flinching { animation: screen-flinch 0.22s ease-out forwards; }
+
+/* ── Blood overlay ── */
+#blood-overlay {
+  position: fixed; inset: 0; pointer-events: none; z-index: 25; opacity: 0;
+  background:
+    radial-gradient(ellipse at top    left,  rgba(100,0,0,0.85) 0%, transparent 45%),
+    radial-gradient(ellipse at top    right, rgba(100,0,0,0.85) 0%, transparent 45%),
+    radial-gradient(ellipse at bottom left,  rgba(100,0,0,0.85) 0%, transparent 45%),
+    radial-gradient(ellipse at bottom right, rgba(100,0,0,0.85) 0%, transparent 45%),
+    radial-gradient(ellipse at center, transparent 50%, rgba(80,0,0,0.70) 100%);
+}
+
+/* ── Win screen ── */
+#win-screen {
+  display:none; position:absolute; inset:0;
+  background:rgba(0,0,0,.75);
+  flex-direction:column; align-items:center; justify-content:center;
+  gap:12px;
+}
+#win-screen h1 { font-size:52px; color:#ffd700; text-shadow:0 0 24px #ffd700; }
+#win-screen p  { font-size:22px; color:#fff; }
+
+/* ── Minimap ── */
+#minimap {
+  position:absolute; top:50px; left:16px;
+  border:1px solid #555; border-radius:4px;
+  image-rendering:pixelated;
+}
+
+/* ── Enemy HP bars ── */
+.ehp-wrap {
+  position:fixed; width:52px; height:5px;
+  background:rgba(0,0,0,.65); border:1px solid #555; border-radius:2px;
+  transform:translateX(-50%); pointer-events:none; z-index:15; display:none;
+}
+.ehp-fill { height:100%; background:#cc2200; border-radius:2px; transition:width .08s; }
+
+/* ── Bayonet HUD ── */
+#bayonet-hud {
+  display:none; position:absolute; bottom:56px; right:16px;
+  font-size:13px; font-family:monospace; background:rgba(0,0,0,.72);
+  padding:4px 12px; border-radius:4px; border:1px solid #888;
+  letter-spacing:1px; white-space:nowrap;
+}
+#artillery-hud {
+  display:none; position:absolute; top:22%; left:50%; transform:translateX(-50%);
+  font-size:19px; font-family:monospace; background:rgba(70,0,0,.88);
+  padding:10px 26px; border-radius:6px; border:2px solid #ff4400;
+  color:#ff6622; letter-spacing:1px; white-space:nowrap; text-align:center;
+}
+#bayonet-fix-hud {
+  display:none; position:absolute; top:38%; left:50%; transform:translateX(-50%);
+  font-size:21px; font-family:monospace; background:rgba(0,0,0,.80);
+  padding:12px 28px; border-radius:7px; border:2px solid #ffcc44;
+  color:#ffcc44; letter-spacing:2px; white-space:nowrap; text-align:center;
+}
+
+/* ── Machine Gun HUD ── */
+#mg-prompt {
+  display:none; position:absolute; bottom:160px; left:50%; transform:translateX(-50%);
+  font-size:15px; background:rgba(0,0,0,.78); padding:6px 20px;
+  border-radius:5px; border:1px solid #aaa; letter-spacing:.5px; white-space:nowrap;
+}
+#mg-hud {
+  display:none; position:absolute; bottom:80px; left:50%; transform:translateX(-50%);
+  font-size:16px; font-family:monospace; background:rgba(0,0,0,.78); padding:7px 22px;
+  border-radius:5px; border:1px solid #666; letter-spacing:1px; white-space:nowrap;
+  text-align:center;
+}
+
+/* ── Day/night HUD ── */
+#daytime-hud {
+  position:absolute; top:218px; left:16px;
+  font-size:12px; background:rgba(0,0,0,.62); padding:3px 10px;
+  border-radius:4px; border:1px solid #555; letter-spacing:1px; white-space:nowrap;
+  text-align:center; width:160px; box-sizing:border-box;
+}
+#weather-display { color:#88ccdd; }

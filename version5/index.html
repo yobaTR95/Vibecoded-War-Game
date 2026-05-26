@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WW1 – Passchendaele</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="hud">
+  <div id="hp-wrap">
+    <div id="hp-label">HP: 100</div>
+    <div id="hp-track"><div id="hp-fill" style="width:100%"></div></div>
+  </div>
+  <div id="sta-wrap">
+    <div id="sta-label">STAMINA</div>
+    <div id="sta-track"><div id="sta-fill"></div></div>
+  </div>
+  <div id="ammo-wrap">
+    <div id="ammo-label">AMMO</div>
+    <div id="ammo-count">10 / 10</div>
+  </div>
+
+  <div id="zones-hud">
+    <div class="zrow">
+      <div class="zlabel" id="z0-label">No Man's Land: 0%</div>
+      <div class="ztrack"><div class="zfill" id="z0-fill"></div></div>
+    </div>
+    <div class="zrow">
+      <div class="zlabel" id="z1-label">Allied Trench: 0%</div>
+      <div class="ztrack"><div class="zfill" id="z1-fill"></div></div>
+    </div>
+    <div class="zrow">
+      <div class="zlabel" id="z2-label">The Village: 0%</div>
+      <div class="ztrack"><div class="zfill" id="z2-fill"></div></div>
+    </div>
+    <div class="zrow">
+      <div class="zlabel" id="z3-label">Crater Post: 0%</div>
+      <div class="ztrack"><div class="zfill" id="z3-fill"></div></div>
+    </div>
+    <div class="zrow">
+      <div class="zlabel" id="z4-label">German Line: 0%</div>
+      <div class="ztrack"><div class="zfill" id="z4-fill"></div></div>
+    </div>
+  </div>
+
+  <div id="kd-hud">🎯 0 &nbsp; 💀 0 &nbsp; ★ 0</div>
+  <div id="reticle">
+    <div id="r-t"></div>
+    <div id="r-b"></div>
+    <div id="r-l"></div>
+    <div id="r-r"></div>
+    <div id="r-d"></div>
+  </div>
+
+  <div id="player-respawn">
+    <div class="died">YOU DIED</div>
+    <div class="timer">Respawning in <span id="pr-count">5</span>s…</div>
+  </div>
+
+  <div id="respawn-hud">Enemy reinforcements inbound in: 30s</div>
+  <div id="ally-respawn-hud">Ally reinforcements inbound in: 30s</div>
+  <div id="daytime-hud"><span id="clock-display">08:00</span> &nbsp; <span id="weather-display">RAIN</span></div>
+  <div id="bayonet-hud"></div>
+  <div id="artillery-hud"></div>
+  <div id="bayonet-fix-hud"></div>
+  <div id="mg-prompt">Press E to operate machine gun</div>
+  <div id="mg-hud">MG: 30 / 30</div>
+  <div id="aim-hint">Click to lock mouse / aim</div>
+  <div id="blood-overlay"></div>
+
+  <div id="win-screen">
+    <h1>YOU WIN!</h1>
+    <p>All zones conquered. The battlefield is yours.</p>
+  </div>
+
+  <canvas id="minimap" width="160" height="160"></canvas>
+</div>
+
+<script src="three.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
